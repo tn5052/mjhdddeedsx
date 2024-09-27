@@ -68,7 +68,7 @@ const ReviewTable = () => {
     // Function to post a new review to the API after adding it to Firebase
     const postToAPI = async (newReview) => {
       try {
-        const response = await fetch('https://cloud.activepieces.com/api/v1/webhooks/jvruU6OremF0RxqpzDTan', {
+        const response = await fetch('http://64.227.163.185/api/v1/webhooks/06eNVGch5PyQaBOXvyFRm', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
