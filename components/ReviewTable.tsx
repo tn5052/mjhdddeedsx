@@ -23,7 +23,7 @@ import {
   useDisclosure,
   Stat,
   StatLabel,
-  StatNumber, 
+  StatNumber,
   HStack,
   VStack,
   Input,
@@ -40,9 +40,9 @@ import {
   Divider,
   Spinner,
   IconButton,
-  useColorModeValue
+  useColorModeValue,
 } from "@chakra-ui/react";
-import { StarIcon, DeleteIcon,ViewIcon, InfoOutlineIcon } from '@chakra-ui/icons';
+import { StarIcon, DeleteIcon, ViewIcon, InfoOutlineIcon } from '@chakra-ui/icons';
 import { PhoneIcon } from '@chakra-ui/icons';
 import moment from "moment";
 import ReactMarkdown from "react-markdown";
@@ -50,45 +50,67 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GOOGLE_API_KEY);
 
-
-
 const ReviewTable = () => {
   const [reviews, setReviews] = useState([]);
   const [selectedReview, setSelectedReview] = useState(null);
-  const { isOpen, onOpen, onClose } = useDisclosure(); 
+  const { isOpen, onOpen, onClose } = useDisclosure();
   const [geminiAnalysis, setGeminiAnalysis] = useState("");
   const [filterUserId, setFilterUserId] = useState("");
   const [filterDate, setFilterDate] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
- // Define numColumns INSIDE the component function
-  const numColumns = useBreakpointValue({ base: 1, md: 2, lg: 3 }); 
+  // Define numColumns INSIDE the component function
+  const numColumns = useBreakpointValue({ base: 1, md: 2, lg: 3 });
   const boxBg = useColorModeValue("white", "gray.700"); // Dynamic background color
   const textColor = useColorModeValue("gray.700", "white");
-  const modalSize = useBreakpointValue({ base: "md", md: "lg", lg: "2xl" });
 
 
-  useEffect(() => {
-    const reviewsRef = ref(db, "reviews");
-    onValue(reviewsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setReviews(Object.keys(data).map((key) => ({ id: key, ...data[key] })));
+    // Function to post a new review to the API after adding it to Firebase
+    const postToAPI = async (newReview) => {
+      try {
+        const response = await fetch('https://cloud.activepieces.com/api/v1/webhooks/jvruU6OremF0RxqpzDTan', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(newReview),
+        });
+  
+        if (!response.ok) {
+          throw new Error('Failed to post review to API');
+        }
+        console.log("Review posted to API successfully");
+      } catch (error) {
+        console.error("Error posting review to API:", error);
       }
-    });
-  }, []);
+    };
+  
+    useEffect(() => {
+      const reviewsRef = ref(db, "reviews");
+      onValue(reviewsRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const newReviews = Object.keys(data).map((key) => ({ id: key, ...data[key] }));
+          setReviews(newReviews);
+  
+          // Assuming the last added review is new and should be posted to the API
+          const lastAddedReview = newReviews[newReviews.length - 1];
+          if (lastAddedReview) {
+            postToAPI(lastAddedReview); // Post the newly added review to the API
+          }
+        }
+      });
+    }, []);
 
-  const analyzeReview = async (reviewText: string) => {
+  const analyzeReview = async (reviewText) => {
     setIsLoading(true);
-    const prompt = `Analyze the provided review and extract key points, including both strengths and weaknesses. Suggest potential improvements and draft a concise, customer-centric response suitable for a WhatsApp message. Please ensure the tone is empathetic and aligned with customer psychology principles. The review is as follows: \"${reviewText}\"`; // Escape double quotes here
+    const prompt = `Analyze the provided review and extract key points, including both strengths and weaknesses. Suggest potential improvements and draft a concise, customer-centric response suitable for a WhatsApp message. Please ensure the tone is empathetic and aligned with customer psychology principles. The review is as follows: "${reviewText}"`;
 
     try {
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const result = await model.generateContent(prompt);
 
       const responseText = result.response.text();
-      console.log(responseText);
-
       setGeminiAnalysis(responseText);
     } catch (error) {
       console.error("Error analyzing review:", error);
@@ -99,29 +121,43 @@ const ReviewTable = () => {
 
   const handleReviewSelect = (review) => {
     setSelectedReview(review);
-    onOpen(); 
-    analyzeReview(review.review); 
+    onOpen();
+  };
+
+  const handleAnalyzeClick = () => {
+    if (selectedReview) {
+      analyzeReview(selectedReview.review);
+    }
   };
 
   const filteredReviews = reviews.filter((review) => {
     const matchesUserId = !filterUserId || review.userId === filterUserId;
     const matchesDate =
-      !filterDate || moment(review.timestamp).format("YYYY-MM-DD") === filterDate;
+      !filterDate ||
+      moment(review.timestamp).format("YYYY-MM-DD") === filterDate;
     return matchesUserId && matchesDate;
+  });
+
+  // Sort reviews in descending order by timestamp
+  const sortedReviews = [...filteredReviews].sort((a, b) => {
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 
   // Calculate insights
   const totalReviews = filteredReviews.length;
   const overallRating =
     totalReviews > 0
-      ? (filteredReviews.reduce((sum, review) => sum + review.rating, 0) /
-          totalReviews).toFixed(1)
+      ? (
+          filteredReviews.reduce((sum, review) => sum + review.rating, 0) /
+          totalReviews
+        ).toFixed(1)
       : 0;
   const todayReviews = filteredReviews.filter(
     (review) =>
       moment(review.timestamp).format("YYYY-MM-DD") ===
       moment().format("YYYY-MM-DD")
   ).length;
+
   return (
     <ChakraProvider>
       <Box p={4}>
@@ -187,7 +223,7 @@ const ReviewTable = () => {
 
           {/* Review Grid - Add subtle hover effect */}
           <Grid templateColumns={`repeat(${numColumns}, 1fr)`} gap={6}>
-            {filteredReviews.map((review) => (
+            {sortedReviews.map((review) => (
               <GridItem key={review.id}>
                 <Box
                   borderWidth="1px"
@@ -220,23 +256,33 @@ const ReviewTable = () => {
                         <StarIcon key={index} color="yellow.500" />
                       ))}
                     </HStack>
-                    <Badge ml={2} colorScheme={review.rating >= 4 ? "green" : "red"}>
+                    <Badge
+                      ml={2}
+                      colorScheme={review.rating >= 4 ? "green" : "red"}
+                    >
                       {review.rating}
                     </Badge>
                   </Flex>
 
                   <Accordion allowToggle mt={2}>
-                    <AccordionItem border="none"> {/* Remove default border */}
+                    <AccordionItem border="none">
+                      {" "}
+                      {/* Remove default border */}
                       <h2>
-                        <AccordionButton _expanded={{ bg: "gray.100", borderRadius: "lg" }}> {/* Add background on expand */}
-                          <Box flex="1" textAlign="left">
-                            See Review Details <InfoOutlineIcon ml={2} /> {/* Add icon */}
-                          </Box>
-                          <AccordionIcon />
-                        </AccordionButton>
-                      </h2>
+                          <AccordionButton
+                            _expanded={{ bg: "gray.100", borderRadius: "lg" }}
+                          >
+                            {" "}
+                            {/* Add background on expand */}
+                            <Box flex="1" textAlign="left">
+                              See Review Details <InfoOutlineIcon ml={2} />{" "}
+                              {/* Add icon */}
+                            </Box> {/* Add closing tag */}
+                            <AccordionIcon />
+                          </AccordionButton>
+                        </h2>
                       <AccordionPanel pb={4}>
-                        <Text whiteSpace="pre-line"> {/* Preserve line breaks */}
+                        <Text whiteSpace="pre-line"> 
                           {review.review}
                         </Text>
                         <Divider my={2} />
@@ -263,7 +309,11 @@ const ReviewTable = () => {
                             </Tooltip>
                           </ListItem>
                         </List>
-                        <Button mt={4} colorScheme="blue" onClick={() => handleReviewSelect(review)}>
+                        <Button
+                          mt={4}
+                          colorScheme="blue"
+                          onClick={() => handleReviewSelect(review)}
+                        >
                           View Analysis
                         </Button>
                       </AccordionPanel>
@@ -274,62 +324,88 @@ const ReviewTable = () => {
             ))}
           </Grid>
 
-{/* Modal - Redesigned with responsiveness and a cleaner look */}
-<Modal isOpen={isOpen} onClose={onClose} size="xl" isCentered> 
-  <ModalOverlay />
-  <ModalContent
-    maxW={{ base: "90%", md: "60%", lg: "40%" }} // Responsive max-width
-    borderRadius="xl" 
-    boxShadow="0px 8px 24px rgba(0, 0, 0, 0.1)" 
-    bg={boxBg}
-    color={textColor}
-    p={{ base: 4, md: 6 }} // Responsive padding
-  >
-    {selectedReview && (
-      <>
-        <ModalHeader
-          textAlign="center"
-          fontSize={{ base: "xl", md: "2xl" }} // Responsive font size
-          fontWeight="bold"
-          pb={2}
-        >
-          Review Analysis for {selectedReview.name}
-        </ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          <VStack spacing={4} align="stretch"> 
-            <Flex alignItems="center" justifyContent="center" mb={2}>
-              <Avatar name={selectedReview.name} size="xl" /> 
-            </Flex>
-            <Flex alignItems="center" justifyContent="center" mb={2}>
-              {[...Array(selectedReview.rating)].map((_, index) => (
-                <StarIcon key={index} color="yellow.500" />
-              ))}
-            </Flex>
-            <Text fontSize="lg" textAlign="center"> 
-            &ldquo;{selectedReview.review}&rdquo; {/* Escape double quotes and use &ldquo; &rdquo; for proper quotation marks */}
+          {/* Modal - Redesigned with responsiveness and a cleaner look */}
+          <Modal isOpen={isOpen} onClose={onClose} size="xl" isCentered>
+            <ModalOverlay />
+            <ModalContent
+              maxW={{ base: "90%", md: "60%", lg: "40%" }} // Responsive max-width
+              borderRadius="xl"
+              boxShadow="0px 8px 24px rgba(0, 0, 0, 0.1)"
+              bg={boxBg}
+              color={textColor}
+              p={{ base: 4, md: 6 }} // Responsive padding
+            >
+              {selectedReview && (
+                <>
+                  <ModalHeader
+                    textAlign="center"
+                    fontSize={{ base: "xl", md: "2xl" }} // Responsive font size
+                    fontWeight="bold"
+                    pb={2}
+                  >
+                    Review Analysis for {selectedReview.name}
+                  </ModalHeader>
+                  <ModalCloseButton />
+                  <ModalBody>
+                    <VStack spacing={4} align="stretch">
+                      <Flex
+                        alignItems="center"
+                        justifyContent="center"
+                        mb={2}
+                      >
+                        <Avatar name={selectedReview.name} size="xl" />
+                      </Flex>
+                      <Flex
+                        alignItems="center"
+                        justifyContent="center"
+                        mb={2}
+                      >
+                        {[...Array(selectedReview.rating)].map(
+                          (_, index) => (
+                            <StarIcon key={index} color="yellow.500" />
+                          )
+                        )}
+                      </Flex>
+                      <Text fontSize="lg" textAlign="center">
+                        &ldquo;{selectedReview.review}&rdquo;
+                      </Text>
 
-            </Text>
-            {isLoading ? (
-              <Flex justifyContent="center" alignItems="center" height="200px">
-                <Spinner size="xl" /> 
-              </Flex>
-            ) : (
-              <Box overflowY="auto" maxHeight="300px" px={2}> 
-                <ReactMarkdown>{geminiAnalysis}</ReactMarkdown>
-              </Box>
-            )}
-          </VStack>
-        </ModalBody>
-        <ModalFooter justifyContent="center">
-          <Button colorScheme="blue" onClick={onClose}>
-            Close
-          </Button>
-        </ModalFooter>
-      </>
-    )}
-  </ModalContent>
-</Modal>
+                      {!isLoading && !geminiAnalysis && (
+                        <Button
+                          colorScheme="blue"
+                          onClick={handleAnalyzeClick}
+                        >
+                          Analyze Review
+                        </Button>
+                      )}
+
+                      {isLoading ? (
+                        <Flex
+                          justifyContent="center"
+                          alignItems="center"
+                          height="200px"
+                        >
+                          <Spinner size="xl" />
+                        </Flex>
+                      ) : (
+                        geminiAnalysis && (
+                          <Box overflowY="auto" maxHeight="300px" px={2}>
+                            <ReactMarkdown>{geminiAnalysis}</ReactMarkdown>
+                          </Box>
+                        )
+                      )}
+                    </VStack>
+                  </ModalBody>
+                  <ModalFooter justifyContent="center">
+                    <Button colorScheme="blue" onClick={onClose}>
+                      Close
+                    </Button>
+                  </ModalFooter>
+                </>
+              )}
+            </ModalContent>
+          </Modal>
+
         </VStack> {/* End of VStack */}
       </Box>
     </ChakraProvider>
